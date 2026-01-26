@@ -132,6 +132,11 @@ class Decoder(nn.Module):
             nn.Sigmoid(),
         )
 
+        self.variance_block = nn.Sequential(
+            nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.Conv2d(in_channels=3, out_channels=3, kernel_size=3, stride=1, padding=1, bias=False)
+        )
+
     def forward(self, x):
         x = x.reshape(-1, 16, 4, 4)
-        return self.decoder(x)
+        return self.decoder(x), self.variance_block(x)
