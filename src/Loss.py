@@ -13,5 +13,5 @@ class MainLoss(nn.Module):
         super().__init__()
 
     @staticmethod
-    def forward(self, x, x_var, y):
+    def forward(x, x_var, y):
         return -reconstruction_loss(x,y) + kl_loss(x,x_var)
