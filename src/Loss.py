@@ -14,4 +14,4 @@ class MainLoss(nn.Module):
 
     @staticmethod
     def forward(x, y, z, z_var):
-        return reconstruction_loss(x,y) + kl_loss(z,z_var)
+        return reconstruction_loss(x,y) + 0.5*kl_loss(z,z_var)

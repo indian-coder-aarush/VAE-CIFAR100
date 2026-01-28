@@ -69,8 +69,19 @@ class Encoder(nn.Module):
             nn.LayerNorm(256),
         )
 
+        self.variance_block = nn.Sequential(
+            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(num_features=16),
+            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(num_features=16),
+            nn.ReLU(),
+            nn.Flatten()
+        )
+
     def forward(self, x):
-        return self.encoder(x)
+        z_mu = self.encoder(x)
+        z_var = self.variance_block(z_mu.reshape(-1, 16 ,4,4))
+        return z_mu + torch.randn(256)*(z_var/2).exp(), z_var
 
 class ResidualBlockDecoder(nn.Module):
 
@@ -133,21 +144,12 @@ class Decoder(nn.Module):
             nn.Sigmoid(),
         )
 
-        self.variance_block = nn.Sequential(
-            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(num_features=16),
-            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(num_features=16),
-            nn.ReLU(),
-            nn.Flatten()
-        )
-
         self.flatten = nn.Flatten()
 
-    def forward(self, x):
-        x = x.reshape(-1, 16, 4, 4)
-        out = self.decoder(x)
-        return out, self.flatten(x), self.variance_block(x)
+    def forward(self, z, z_var):
+        z = z.reshape(-1, 16, 4, 4)
+        out = self.decoder(z)
+        return out, self.flatten(z), z_var
 
 class Model(nn.Module):
 
@@ -158,4 +160,4 @@ class Model(nn.Module):
 
     def forward(self, x):
         z = self.encoder(x)
-        return self.decoder(z)
+        return self.decoder(*z)
