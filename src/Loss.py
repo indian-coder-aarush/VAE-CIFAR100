@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 
 def reconstruction_loss(x, y):
-    return torch.sum((x - y) ** 2)
+    return torch.mean((((x - y)/313.28) ** 2))
 
-def kl_loss(x, x_var):
-    return torch.sum(0.5*(x**2 - x_var**2 - 2*torch.log(x_var)))
+def kl_loss(z, z_var):
+    return -0.5 * torch.mean(1 + z_var - z.pow(2) - z_var.exp())
 
 class MainLoss(nn.Module):
 
@@ -13,5 +13,5 @@ class MainLoss(nn.Module):
         super().__init__()
 
     @staticmethod
-    def forward(x, x_var, y):
-        return -reconstruction_loss(x,y) + kl_loss(x,x_var)
+    def forward(x, y, z, z_var):
+        return reconstruction_loss(x,y) + kl_loss(z,z_var)
