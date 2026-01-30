@@ -74,14 +74,15 @@ class Encoder(nn.Module):
             nn.BatchNorm2d(num_features=16),
             nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3, stride=1, padding=1, bias=False),
             nn.BatchNorm2d(num_features=16),
-            nn.ReLU(),
-            nn.Flatten()
+            nn.Flatten(),
+            nn.LayerNorm(256),
         )
 
     def forward(self, x):
         z_mu = self.encoder(x)
         z_var = self.variance_block(z_mu.reshape(-1, 16 ,4,4))
-        return z_mu + torch.randn(256)*(z_var/2).exp(), z_var
+        z_sample = z_mu + torch.randn_like(z_mu)*0.1*(z_var/2).exp()
+        return z_sample, z_var
 
 class ResidualBlockDecoder(nn.Module):
 
@@ -119,13 +120,30 @@ class UpSampleResidualBlock(nn.Module):
         out = self.transpose_conv2(out)
         out = self.batch_norm2(out)
         residual = self.residual_tranpose_conv(residual)
-        out = F.relu(out + residual)
+        out = out + residual
         return out
+
+class Reshape(nn.Module):
+    def __init__(self, reshape_dim):
+        super().__init__()
+        if(isinstance(reshape_dim, tuple)):
+            self.reshape_dim = reshape_dim
+        else:
+            raise ValueError("reshape dim must be tuple")
+
+    def forward(self, x):
+        return x.reshape(*self.reshape_dim)
+
 
 class Decoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.decoder = nn.Sequential(
+            nn.Linear(in_features=256, out_features=256),
+            nn.ReLU(),
+            nn.Linear(in_features=256, out_features=256),
+            nn.ReLU(),
+            Reshape((-1, 16, 4, 4)),
             UpSampleResidualBlock(16, 8),
             ResidualBlockDecoder(8),
             ResidualBlockDecoder(8),
@@ -147,7 +165,6 @@ class Decoder(nn.Module):
         self.flatten = nn.Flatten()
 
     def forward(self, z, z_var):
-        z = z.reshape(-1, 16, 4, 4)
         out = self.decoder(z)
         return out, self.flatten(z), z_var
 
