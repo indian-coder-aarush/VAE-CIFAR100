@@ -32,4 +32,4 @@ class ImageDataset(Dataset):
 
 def make_dataloader(data):
     dataset = ImageDataset(data)
-    return DataLoader(dataset, batch_size = 32, num_workers = 2)
+    return DataLoader(dataset, batch_size = 128, num_workers = 2)
