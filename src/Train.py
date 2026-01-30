@@ -6,6 +6,8 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
 def train_model(model, optimizer, loss_fn, train_loader, val_loader, epochs):
     for epoch in range(epochs):
         print("Epoch " + str(epoch))
