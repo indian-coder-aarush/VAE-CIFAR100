@@ -43,14 +43,20 @@ def train_model(model, optimizer, loss_fn, train_loader, val_loader, epochs, sch
 
         for batch_idx, data in enumerate(train_loader):
 
-            generated, z, variance  = model(data)
+            generated, mean, z, variance  = model(data)
 
-            loss = loss_fn(generated, data, z, variance, beta)
+            loss = loss_fn(generated, data, mean, z, variance, beta)
             loss.backward()
             loss_sum += loss.item()
 
             optimizer.step()
             optimizer.zero_grad()
+
+            if batch_idx % 100 == 0:
+                plt.imshow((generated[0].detach().numpy().transpose(1, 2, 0)))
+                plt.show()
+                plt.imshow(data[0].detach().numpy().transpose(1, 2, 0))
+                plt.show()
 
             print("     At Train Batch " + str(batch_idx) + " Loss: " + str(loss.item()))
 
@@ -63,13 +69,13 @@ def train_model(model, optimizer, loss_fn, train_loader, val_loader, epochs, sch
 
             for batch_idx, data in enumerate(val_loader):
 
-                generated, z, variance = model(data)
-                loss = loss_fn(generated, data, z, variance, beta)
+                generated, mean, z, variance = model(data)
+                loss = loss_fn(generated, data, mean, z, variance, beta)
                 val_loss_sum += loss.item()
 
                 print("     At Validation Batch " + str(batch_idx) + " Loss: " + str(loss.item()))
 
-                if batch_idx % 50 == 0:
+                if batch_idx == 75:
                         plt.imshow((generated[0].detach().numpy().transpose(1, 2, 0)))
                         plt.show()
                         plt.imshow(data[0].detach().numpy().transpose(1, 2, 0))
@@ -91,9 +97,9 @@ def train_model(model, optimizer, loss_fn, train_loader, val_loader, epochs, sch
 #Intializing required objects
 model = Model()
 Optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(Optimizer, patience=3, cooldown=2, factor=0.5)
-early_stopper = EarlyStopping(7)
-beta_annealer = KLBetaAnnealing(cycle = 20, max_beta = 0.5)
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(Optimizer, patience=3, cooldown=2, factor=0.8)
+early_stopper = EarlyStopping(10)
+beta_annealer = KLBetaAnnealing(cycle = 10, max_beta = 0.5)
 loss_fn = MainLoss()
 train, test = DataLoader.load_all_data()
 train_loader = make_dataloader(train)

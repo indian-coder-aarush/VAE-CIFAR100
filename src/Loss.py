@@ -3,10 +3,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 def reconstruction_loss(x, y):
-    return torch.mean(((x- y) ** 2))
+    return torch.mean(torch.sum((torch.abs(x - y)), (1,2,3)))
 
-def kl_loss(z, z_var):
-    return -0.5 * torch.mean(1 + z_var*0.1 - z.pow(2) - (z_var*0.1).exp())
+def kl_loss(z_mean, z_var):
+    kl = -0.5 * (1 + z_var - z_mean.pow(2) - z_var.exp())
+    kl = torch.clamp(kl, min=0.05)
+    kl = torch.mean(torch.sum(kl,(1,2,3)))
+    return kl
 
 class MainLoss(nn.Module):
 
@@ -14,8 +17,8 @@ class MainLoss(nn.Module):
         super().__init__()
 
     @staticmethod
-    def forward(x, y, z , z_var, beta):
-        return reconstruction_loss(x,y) + beta*kl_loss(z,z_var)
+    def forward(x, y, mean, z , z_var, beta):
+        return reconstruction_loss(x,y) + beta*kl_loss(mean,z_var)
 
 class KLBetaAnnealing:
 
@@ -33,9 +36,9 @@ class KLBetaAnnealing:
         else:
             self.current_step -= 1
         if self.current_step >= self.cycle:
-            self.current_step = self.cycle
+            self.current_step = torch.tensor(self.cycle)
             self.plus = False
         if self.current_step <= -self.cycle:
-            self.current_step = -self.cycle
+            self.current_step = torch.tensor(-self.cycle)
             self.plus = True
         return current_beta*self.max_beta

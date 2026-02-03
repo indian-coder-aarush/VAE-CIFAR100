@@ -8,17 +8,17 @@ class ResidualBlockEncoder(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, bias=False)
-        self.batch_norm1 = nn.BatchNorm2d(in_channels)
+        self.layer_norm1 = nn.GroupNorm(32, in_channels)
         self.conv2 = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, bias=False)
-        self.batch_norm2 = nn.BatchNorm2d(in_channels)
+        self.layer_norm2 = nn.GroupNorm(32, in_channels)
 
     def forward(self, x):
         residual = x
         out = self.conv1(x)
-        out = self.batch_norm1(out)
+        out = self.layer_norm1(out)
         out = F.relu(out)
         out = self.conv2(out)
-        out = self.batch_norm2(out)
+        out = self.layer_norm2(out)
         return F.relu(out + residual)
 
 class DownSampleResidualBlock(nn.Module):
@@ -26,18 +26,18 @@ class DownSampleResidualBlock(nn.Module):
     def __init__(self, in_channels):
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=2, padding=1, bias=False)
-        self.batch_norm1 = nn.BatchNorm2d(in_channels)
+        self.layer_norm1 = nn.GroupNorm(32, in_channels)
         self.conv2 = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, bias=False)
-        self.batch_norm2 = nn.BatchNorm2d(in_channels)
+        self.layer_norm2 = nn.GroupNorm(32, in_channels)
         self.skip_connection_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=2, padding=0, bias=False)
 
     def forward(self, x):
         residual = x
         out = self.conv1(x)
-        out = self.batch_norm1(out)
+        out = self.layer_norm1(out)
         out = F.relu(out)
         out = self.conv2(out)
-        out = self.batch_norm2(out)
+        out = self.layer_norm2(out)
         residual = self.skip_connection_conv(residual)
         return F.relu(out + residual)
 
@@ -45,80 +45,86 @@ class Encoder(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.encoder = nn.Sequential(
+
+        self.backbone = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=7, stride=1, padding=3, bias=False),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=1),
             ResidualBlockEncoder(64),
-            ResidualBlockEncoder(64),
-            ResidualBlockEncoder(64),
+            DownSampleResidualBlock(64),
             ResidualBlockEncoder(64),
             DownSampleResidualBlock(64),
             ResidualBlockEncoder(64),
-            ResidualBlockEncoder(64),
-            ResidualBlockEncoder(64),
-            ResidualBlockEncoder(64),
-            DownSampleResidualBlock(64),
-            ResidualBlockEncoder(64),
-            ResidualBlockEncoder(64),
-            ResidualBlockEncoder(64),
-            ResidualBlockEncoder(64),
-            nn.Flatten(),
-            nn.Linear(in_features=64*4*4, out_features=512),
+        )
+
+        self.encoder = nn.Sequential(
+            nn.Conv2d(64, 32, kernel_size=3, stride=1, padding=1, bias=False),
             nn.ReLU(),
-            nn.Linear(in_features=512, out_features=256),
-            nn.LayerNorm(256),
+            nn.GroupNorm(16,32),
+            nn.Conv2d(32, 8, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.GroupNorm(4,8),
         )
 
         self.variance_block = nn.Sequential(
-            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(num_features=16),
-            nn.Conv2d(in_channels=16, out_channels=16, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.BatchNorm2d(num_features=16),
-            nn.Flatten(),
-            nn.LayerNorm(256),
+            nn.Conv2d(64, 32, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.ReLU(),
+            nn.GroupNorm(16, 32),
+            nn.Conv2d(32, 8, kernel_size=3, stride=1, padding=1, bias=False),
+            nn.GroupNorm(4, 8),
         )
 
     def forward(self, x):
-        z_mu = self.encoder(x)
-        z_var = self.variance_block(z_mu.reshape(-1, 16 ,4,4))
-        z_sample = z_mu + torch.randn_like(z_mu)*0.1*(z_var/2).exp()
-        return z_sample, z_var
+        h = self.backbone(x)
+        z_var = self.variance_block(h).clamp(min = -6, max = 2)
+        z_mu = self.encoder(h)
+        z_sample = z_mu + torch.randn_like(z_mu)*(z_var/2).exp()
+        return z_sample, z_mu, z_var
 
 class ResidualBlockDecoder(nn.Module):
 
     def __init__(self, in_channels):
+        self.in_groups = None
+        for i in reversed(range(1,in_channels)):
+            if in_channels % i == 0:
+                self.in_groups = i
         super().__init__()
         self.transpose_conv1 = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, bias=False)
-        self.batch_norm1 = nn.BatchNorm2d(in_channels)
+        self.layer_norm1 = nn.GroupNorm(self.in_groups, in_channels)
         self.transpose_conv2 = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, bias=False)
-        self.batch_norm2 = nn.BatchNorm2d(in_channels)
+        self.layer_norm2 = nn.GroupNorm(self.in_groups, in_channels)
 
     def forward(self, x):
         residual = x
         out = self.transpose_conv1(x)
-        out = self.batch_norm1(out)
+        out = self.layer_norm1(out)
         out = F.relu(out)
         out = self.transpose_conv2(out)
-        out = self.batch_norm2(out)
+        out = self.layer_norm2(out)
         out = F.relu(out + residual)
         return out
 
 class UpSampleResidualBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
+        self.in_groups, self.out_groups = None, None
+        for i in reversed(range(1,in_channels)):
+            if in_channels % i == 0:
+                self.in_groups = i
+        for i in reversed(range(1, in_channels)):
+            if out_channels % i == 0:
+                self.out_groups = i
         super().__init__()
         self.transpose_conv1 = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=4, stride=2, padding=1, bias=False)
-        self.batch_norm1 = nn.BatchNorm2d(in_channels)
+        self.layer_norm1 = nn.GroupNorm(self.in_groups, in_channels)
         self.transpose_conv2 = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
-        self.batch_norm2 = nn.BatchNorm2d(out_channels)
+        self.layer_norm2 = nn.GroupNorm(self.out_groups, out_channels)
         self.residual_tranpose_conv = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2, padding=0, bias=False)
 
     def forward(self, x):
         residual = x
         out = self.transpose_conv1(x)
-        out = self.batch_norm1(out)
+        out = self.layer_norm1(out)
         out = F.relu(out)
         out = self.transpose_conv2(out)
-        out = self.batch_norm2(out)
+        out = self.layer_norm2(out)
         residual = self.residual_tranpose_conv(residual)
         out = out + residual
         return out
@@ -139,34 +145,20 @@ class Decoder(nn.Module):
     def __init__(self):
         super().__init__()
         self.decoder = nn.Sequential(
-            nn.Linear(in_features=256, out_features=256),
-            nn.ReLU(),
-            nn.Linear(in_features=256, out_features=256),
-            nn.ReLU(),
-            Reshape((-1, 16, 4, 4)),
-            UpSampleResidualBlock(16, 8),
-            ResidualBlockDecoder(8),
-            ResidualBlockDecoder(8),
-            ResidualBlockDecoder(8),
+            UpSampleResidualBlock(8, 8),
+            nn.Dropout2d(0.1),
             ResidualBlockDecoder(8),
             UpSampleResidualBlock(8, 4),
-            ResidualBlockDecoder(4),
-            ResidualBlockDecoder(4),
-            ResidualBlockDecoder(4),
-            ResidualBlockDecoder(4),
             UpSampleResidualBlock(4, 3),
-            ResidualBlockDecoder(3),
-            ResidualBlockDecoder(3),
-            ResidualBlockDecoder(3),
             ResidualBlockDecoder(3),
             nn.Sigmoid(),
         )
 
         self.flatten = nn.Flatten()
 
-    def forward(self, z, z_var):
+    def forward(self, z, z_mu, z_var):
         out = self.decoder(z)
-        return out, self.flatten(z), z_var
+        return out, z_mu, self.flatten(z), z_var
 
 class Model(nn.Module):
 
