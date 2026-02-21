@@ -5,8 +5,12 @@ from Data import DataLoader
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
+import os
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
+CURRENT_PATH = os.path.abspath(__file__)
+PATH = os.path.join(os.path.dirname(os.path.dirname(CURRENT_PATH)), "models/model.pth")
 
 #Class to implement the early stopping mecahnism
 class EarlyStopping:
@@ -35,6 +39,8 @@ def train_model(model, optimizer, loss_fn, train_loader, val_loader, epochs, sch
 
     for epoch in range(epochs):
 
+        model.train()
+
         print("Epoch " + str(epoch))
 
         # Training batch loop
@@ -52,7 +58,7 @@ def train_model(model, optimizer, loss_fn, train_loader, val_loader, epochs, sch
             optimizer.step()
             optimizer.zero_grad()
 
-            if batch_idx % 100 == 0:
+            if batch_idx % 45 == 0 and epoch % 10 == 0:
                 plt.imshow((generated[0].detach().numpy().transpose(1, 2, 0)))
                 plt.show()
                 plt.imshow(data[0].detach().numpy().transpose(1, 2, 0))
@@ -75,7 +81,7 @@ def train_model(model, optimizer, loss_fn, train_loader, val_loader, epochs, sch
 
                 print("     At Validation Batch " + str(batch_idx) + " Loss: " + str(loss.item()))
 
-                if batch_idx == 75:
+                if batch_idx % 20 == 1 and epoch % 10 == 0:
                         plt.imshow((generated[0].detach().numpy().transpose(1, 2, 0)))
                         plt.show()
                         plt.imshow(data[0].detach().numpy().transpose(1, 2, 0))
@@ -83,6 +89,16 @@ def train_model(model, optimizer, loss_fn, train_loader, val_loader, epochs, sch
 
             val_loss_sum /= 79
             loss_sum /= 395
+
+        checkpoint = {
+            'model' : model.state_dict(),
+            'optimizer' : optimizer.state_dict(),
+            'epoch' : epoch,
+            'val_loss' : val_loss_sum,
+            'train_loss' : loss_sum,
+        }
+
+        torch.save(checkpoint, PATH)
 
         #Scheduler and early stop updates
         scheduler.step(val_loss_sum)
@@ -99,12 +115,12 @@ model = Model()
 Optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(Optimizer, patience=3, cooldown=2, factor=0.8)
 early_stopper = EarlyStopping(10)
-beta_annealer = KLBetaAnnealing(cycle = 10, max_beta = 0.5)
+beta_annealer = KLBetaAnnealing(cycle = 6, max_beta = 0.5)
 loss_fn = MainLoss()
 train, test = DataLoader.load_all_data()
 train_loader = make_dataloader(train)
 val_loader = make_dataloader(test)
-epochs = 2000
+epochs = 200
 
 #calling the training loop
 train_model(model, Optimizer, loss_fn, train_loader, val_loader, epochs, scheduler, early_stopper, beta_annealer)

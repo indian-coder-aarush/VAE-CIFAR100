@@ -3,7 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 def reconstruction_loss(x, y):
-    return torch.mean(torch.sum((torch.abs(x - y)), (1,2,3)))
+    w = torch.tensor([1.5, 1.5, 1.5]).reshape(1,3,1,1)
+    return torch.mean(torch.sum(w * torch.abs(x - y), dim=(1, 2, 3)))
 
 def kl_loss(z_mean, z_var):
     kl = -0.5 * (1 + z_var - z_mean.pow(2) - z_var.exp())

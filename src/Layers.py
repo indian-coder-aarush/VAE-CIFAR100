@@ -9,8 +9,6 @@ class ResidualBlockEncoder(nn.Module):
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, bias=False)
         self.layer_norm1 = nn.GroupNorm(32, in_channels)
-        self.conv2 = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, bias=False)
-        self.layer_norm2 = nn.GroupNorm(32, in_channels)
 
     def forward(self, x):
         residual = x
@@ -28,7 +26,6 @@ class DownSampleResidualBlock(nn.Module):
         self.conv1 = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=2, padding=1, bias=False)
         self.layer_norm1 = nn.GroupNorm(32, in_channels)
         self.conv2 = nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, bias=False)
-        self.layer_norm2 = nn.GroupNorm(32, in_channels)
         self.skip_connection_conv = nn.Conv2d(in_channels, in_channels, kernel_size=1, stride=2, padding=0, bias=False)
 
     def forward(self, x):
@@ -61,7 +58,6 @@ class Encoder(nn.Module):
             nn.ReLU(),
             nn.GroupNorm(16,32),
             nn.Conv2d(32, 8, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.GroupNorm(4,8),
         )
 
         self.variance_block = nn.Sequential(
@@ -69,7 +65,6 @@ class Encoder(nn.Module):
             nn.ReLU(),
             nn.GroupNorm(16, 32),
             nn.Conv2d(32, 8, kernel_size=3, stride=1, padding=1, bias=False),
-            nn.GroupNorm(4, 8),
         )
 
     def forward(self, x):
@@ -88,9 +83,7 @@ class ResidualBlockDecoder(nn.Module):
                 self.in_groups = i
         super().__init__()
         self.transpose_conv1 = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, bias=False)
-        self.layer_norm1 = nn.GroupNorm(self.in_groups, in_channels)
         self.transpose_conv2 = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=3, stride=1, padding=1, bias=False)
-        self.layer_norm2 = nn.GroupNorm(self.in_groups, in_channels)
 
     def forward(self, x):
         residual = x
@@ -113,18 +106,14 @@ class UpSampleResidualBlock(nn.Module):
                 self.out_groups = i
         super().__init__()
         self.transpose_conv1 = nn.ConvTranspose2d(in_channels, in_channels, kernel_size=4, stride=2, padding=1, bias=False)
-        self.layer_norm1 = nn.GroupNorm(self.in_groups, in_channels)
         self.transpose_conv2 = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
-        self.layer_norm2 = nn.GroupNorm(self.out_groups, out_channels)
         self.residual_tranpose_conv = nn.ConvTranspose2d(in_channels, out_channels, kernel_size=2, stride=2, padding=0, bias=False)
 
     def forward(self, x):
         residual = x
         out = self.transpose_conv1(x)
-        out = self.layer_norm1(out)
         out = F.relu(out)
         out = self.transpose_conv2(out)
-        out = self.layer_norm2(out)
         residual = self.residual_tranpose_conv(residual)
         out = out + residual
         return out
@@ -151,13 +140,11 @@ class Decoder(nn.Module):
             UpSampleResidualBlock(8, 4),
             UpSampleResidualBlock(4, 3),
             ResidualBlockDecoder(3),
-            nn.Sigmoid(),
         )
-
-        self.flatten = nn.Flatten()
 
     def forward(self, z, z_mu, z_var):
         out = self.decoder(z)
+        out.clamp(min = 0, max = 1)
         return out, z_mu, self.flatten(z), z_var
 
 class Model(nn.Module):
